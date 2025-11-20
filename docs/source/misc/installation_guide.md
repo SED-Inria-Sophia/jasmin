@@ -42,10 +42,10 @@ manager must be configured to trust and use this repository. To this end run the
 following commands as root (for Debian Trixie; if you are using Bookworm,
 replace “trixie” with “bookworm” in the second command):
 
-~~~
+```bash
 wget -qO- https://formosa-crypto.org/formosa-archive-keyring.pgp | gpg --dearmor > /etc/apt/trusted.gpg.d/formosa-crypto.gpg
 echo 'deb [signed-by=/etc/apt/trusted.gpg.d/formosa-crypto.gpg] https://repo.formosa-crypto.org/debian trixie main' > /etc/apt/sources.list.d/formosa-crypto.list
-~~~
+```
 
 Then update the list of available packages (`sudo apt update`) and install the package that you need:
 
@@ -135,6 +135,17 @@ The required dependencies include the following:
  - [OCaml](https://ocaml.org) at version 4.14, with the following tools and libraries: menhir, menhirLib, dune, findlib (aka ocamlfind), apron, camlidl, angstrom, batteries, cmdliner, zarith, yojson.
  - [MPFR](https://www.mpfr.org/)
  - [PPL](https://www.bugseng.com/ppl)
+
+#### Using the pixi package manager
+
+If you have `pixi` installed (see <https://pixi.sh>), you can use it to set up a development environment with all dependencies.
+
+    pixi shell
+
+This will drop you into a shell with all tools available.
+You can also use `pixi` to install the project in development mode:
+
+    pixi run install_dev
 
 #### Build the Jasmin toolbox
 
