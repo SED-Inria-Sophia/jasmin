@@ -98,7 +98,7 @@ end = struct
       Cassgn (mk_lval fn lv, tag, ty, mk_expr fn e)
     | Copn (lvls, tag, opn, exprs) ->
       Copn (mk_lvals fn lvls, tag, opn, mk_exprs fn exprs)
-    | Cassert _ -> assert false
+    | Cassert (s,e) -> Cassert (s, mk_expr fn e)
     | Csyscall (lvls, o, exprs) ->
         Csyscall(mk_lvals fn lvls, o, mk_exprs fn exprs)
     | Cif (e, st, st') ->
@@ -125,7 +125,9 @@ end = struct
     | Pif (ty, e, el, er)  ->
       Pif (ty, mk_expr fn e, mk_expr fn el, mk_expr fn er)
     (* FIXME *)
-    | Pbig _ | Pis_var_init _ | Pis_mem_init _ -> assert false
+    | Pis_mem_init (e1, e2) ->
+      Pis_mem_init (mk_expr fn e1, mk_expr fn e2)
+    | Pbig _ | Pis_var_init _ -> assert false
   and mk_exprs fn exprs = List.map (mk_expr fn) exprs
 
   let mk_uniq main_decl ((glob_decls, fun_decls) : (unit, 'asm) prog) =
@@ -386,7 +388,7 @@ end = struct
     | Copn (lvs, _, _, es) | Csyscall(lvs, _, es) -> List.fold_left (fun st lv ->
         List.fold_left (fun st e -> pa_lv st lv e) st es) st lvs
 
-    | Cassert _ -> assert false
+    | Cassert (s,e) -> st
 
     | Cif (b, c1, c2) ->
       let vs,st = expr_vars st b in

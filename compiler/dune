@@ -33,4 +33,11 @@
  (modules jasmin2ec)
  (modes byte exe)
  (libraries commonCLI))
+
+(executable
+ (public_name jasmin-sc)
+ (name jasmin_sc)
+ (modules jasmin_sc)
+ (modes byte exe)
+ (libraries commonCLI jasmin_sc linter))
 )

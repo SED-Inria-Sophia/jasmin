@@ -15,6 +15,11 @@
  (libraries angstrom batteries.unthreaded zarith menhirLib uint63))
 
 (library
+ (name jasmin_sc)
+ (modules x86_safety)
+ (libraries jasmin jasmin_checksafety))
+
+(library
  (name jasminc)
- (modules main_compiler x86_safety)
- (libraries jasmin jasmin_checksafety linter))
+ (modules main_compiler)
+ (libraries jasmin jasmin_sc linter))

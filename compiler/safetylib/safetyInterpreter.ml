@@ -99,6 +99,7 @@ type arr_slice = { as_arr    : var;
                    as_offset : Prog.expr; }
 
 type safe_cond =
+  | Assert of expr
   | Initv of var
 
   | Initai  of arr_slice
@@ -145,6 +146,7 @@ let pp_arr_slice fmt slice =
       slice.as_offset slice.as_len
 
 let pp_safety_cond fmt = function
+  | Assert e -> Format.fprintf fmt "assert %a" pp_expr e
   | Initv x -> Format.fprintf fmt "is_init %a" pp_var x
   | Initai (slice) ->
     Format.fprintf fmt "is_init %a"
@@ -468,7 +470,7 @@ let safe_opn safe opn es =
 let safe_instr ginstr = match ginstr.i_desc with
   | Cassgn (lv, _, _, e) -> safe_e_rec (safe_lval lv) e
   | Copn (lvs,_,opn,es) -> safe_opn (safe_lvals lvs @ safe_es es) opn es
-  | Cassert _ -> assert false
+  | Cassert (_, e) -> assert false
   | Cif(e, _, _) -> safe_e e
   | Cwhile(_, _, _, _, _) -> []       (* We check the while condition later. *)
   | Ccall(lvs, _, es) | Csyscall(lvs, _, es) -> safe_lvals lvs @ safe_es es
@@ -707,6 +709,12 @@ end = struct
   (*-------------------------------------------------------------------------*)
   (* Checks that all safety conditions hold, except for valid memory access. *)
   let is_safe state = function
+    | Assert e ->
+      let be = Papp1 (Onot, e) in
+      begin match AbsExpr.bexpr_to_btcons be state.abs with
+        | None -> false
+        | Some c ->
+          AbsDom.is_bottom (AbsDom.meet_btcons state.abs c) end
     | Initv v -> begin match mvar_of_scoped_var Expr.Slocal v with
         | Mlocal at -> AbsDom.check_init state.abs at
         | _ -> assert false end
@@ -1780,6 +1788,46 @@ end = struct
 
   let log = timestamp ()
 
+  let safe_instr ginstr =
+    match ginstr.i_desc with
+    | Cassert (_, e) -> [ e ]
+    | _ -> []
+
+  let is_safe state e =
+     let be = Papp1 (Onot, e) in
+     match AbsExpr.bexpr_to_btcons be state.abs with
+     | None -> false
+    | Some c ->
+      AbsDom.is_bottom (AbsDom.meet_btcons state.abs c)
+
+  let is_safe state cond =
+    let res = is_safe state cond in
+    let () = debug (fun () ->
+        Format.eprintf "Checked condition: %a@."
+          pp_safety_cond (Assert cond))
+    in
+    res
+
+  let rec check_safety_rec state unsafe = function
+    | [] -> unsafe
+    | c :: t ->
+      let unsafe = if is_safe state c then unsafe else c :: unsafe in
+      check_safety_rec state unsafe t
+
+  let rec check_safety state loc conds =
+    let vsc = check_safety_rec state [] conds in
+    (*let abs, mvsc, s_effects =
+      mem_safety_rec (state.abs, [], state.s_effects) conds in *)
+(*
+    let state = { state with abs = abs;
+                             s_effects = s_effects } in
+*)
+    let unsafe = vsc (* @ mvsc *)
+                 |> List.map (fun x -> (loc,Assert x)) in
+    add_violations state unsafe
+
+  (* -------------------------------------------------------------------- *)
+
   let rec aeval_ginstr pd asmOp : ('ty,minfo,'asm) ginstr -> astate -> astate =
     fun ginstr state ->
       debug (fun () ->
@@ -1790,12 +1838,47 @@ end = struct
       then state
       else
         (* We check the safety conditions *)
+
         let conds = safe_instr ginstr in
         let state = check_safety state (InProg ginstr.i_loc) conds in
+
         aeval_ginstr_aux pd asmOp ginstr state
 
   and aeval_ginstr_aux pd asmOp : ('ty,minfo,'asm) ginstr -> astate -> astate =
     fun ginstr state ->
+    debug(fun () ->
+      let desc_str = match ginstr.i_desc with
+       | Cassgn (lv, _, _, e) ->
+           Format.asprintf "Cassgn: %a = %a"
+             (Printer.pp_lval ~debug:true) lv
+             (Printer.pp_expr ~debug:true) e
+       | Copn (lvs, _, op, es) ->
+           Format.asprintf "Copn: %a = %a(%a)"
+             (Utils.pp_list ", " (Printer.pp_lval ~debug:true)) lvs
+             (PrintCommon.pp_opn pd asmOp) op
+             (Utils.pp_list ", " (Printer.pp_expr ~debug:true)) es
+       | Csyscall (lvs, sc, es) ->
+           Format.asprintf "Csyscall: %a = syscall(%a)"
+             (Utils.pp_list ", " (Printer.pp_lval ~debug:true)) lvs
+             (Utils.pp_list ", " (Printer.pp_expr ~debug:true)) es
+       | Cassert (_, e) ->
+           Format.asprintf "Cassert: %a" (Printer.pp_expr ~debug:true) e
+       | Cif (e, _, _) ->
+           Format.asprintf "Cif: %a" (Printer.pp_expr ~debug:true) e
+       | Cfor (i, (d, e1, e2), _) ->
+           Format.asprintf "Cfor: %a from %a to %a"
+             (Printer.pp_var ~debug:true) (L.unloc i)
+             (Printer.pp_expr ~debug:true) e1
+             (Printer.pp_expr ~debug:true) e2
+       | Cwhile (_, _, e, _, _) ->
+           Format.asprintf "Cwhile: %a" (Printer.pp_expr ~debug:true) e
+       | Ccall (lvs, f, es) ->
+           Format.asprintf "Ccall: %a = %s(%a)"
+             (Utils.pp_list ", " (Printer.pp_lval ~debug:true)) lvs
+             f.fn_name
+             (Utils.pp_list ", " (Printer.pp_expr ~debug:true)) es
+      in
+      Format.eprintf "Processing instruction: %s@." desc_str);
     match ginstr.i_desc with
       | Cassgn (lv,tag,ty1, Pif (ty2, c, el, er))
         when Config.sc_pif_movecc_as_if () ->
@@ -1813,7 +1896,9 @@ end = struct
         let cr = { ginstr with i_desc = Cassgn (lv, tag, Bty (U sz), er) } in
         aeval_if pd asmOp ginstr c [cl] [cr] state
 
-      | Cassert _ -> assert false
+      | Cassert (s, e) ->
+        debug(fun () -> Format.eprintf "Cassert expression: %a@." (Printer.pp_expr ~debug:true) e);
+        state
 
       | Cassgn (lv, _, _, Parr_init _) ->
         let abs = AbsExpr.abs_forget_array_contents state.abs ginstr.i_info lv in
@@ -1842,7 +1927,10 @@ end = struct
       | Cif(e,c1,c2) ->
         aeval_if pd asmOp ginstr e c1 c2 state
 
+        |Cwhile _ -> assert false
+(*
       | Cwhile(_, c1, e, _, c2) when has_annot "bounded" ginstr ->
+
          let prog_pt = ginstr.i_loc in
          let body = c2 @ c1 in
          let rec fully_unroll out state =
@@ -2061,9 +2149,9 @@ end = struct
         let abs = AbsDom.pop_cnstr_blck state.abs prog_pt in
         { state with abs = abs; }
 
-
+*)
       | Ccall(lvs, f, es) ->
-        let f_decl = get_fun_def state.prog f |> oget in
+    (*    let f_decl = get_fun_def state.prog f |> oget in
         let fn = f_decl.f_name in
 
         log f_decl (`Call ginstr.i_loc);
@@ -2083,7 +2171,8 @@ end = struct
             print_return ginstr fstate.abs fn.fn_name);
 
         return_call state callsite fstate lvs
-
+*)
+    assert false
       | Cfor(i, (d,e1,e2), c) ->
         let prog_pt = ginstr.i_loc in
         (match AbsExpr.aeval_cst_int state.abs e1,
@@ -2303,8 +2392,8 @@ end = struct
       let final_st = aeval_gstmt pd asmOp main_decl.f_body state in
 
       (* We check the safety conditions of the return *)
-      let conds = safe_return main_decl in
-      let final_st = check_safety final_st (InReturn main_decl.f_name) conds in
+     (* let conds = safe_return main_decl in *)
+      let final_st = check_safety final_st (InReturn main_decl.f_name) [] in
 
       debug(fun () -> Format.eprintf "%a" pp_violations final_st.violations);
       print_mem_ranges final_st;

@@ -1,0 +1,23 @@
+
+
+export fn titi () -> reg ui32 {
+  reg ui32 z;
+  reg ui32 x;
+  reg ui32 y;
+  x =1;
+  y=2;
+  z = x + y;
+  x = z;
+  return x;
+}
+
+export fn toto (reg ui32 x, reg ui32 y) -> reg ui32 {
+  reg ui32 z;
+  z = x + y;
+  x = z;
+  return x;
+}
+
+
+
+

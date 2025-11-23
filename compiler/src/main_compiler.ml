@@ -1,5 +1,6 @@
 open Jasmin
 open Jasmin_checksafety
+open Jasmin_sc
 open Utils
 open Prog
 open Glob_options

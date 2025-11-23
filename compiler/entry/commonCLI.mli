@@ -5,6 +5,7 @@ val arch : Utils.architecture Term.t
 val call_conv : Glob_options.call_conv Term.t
 val idirs : (string * string) list Term.t
 val warn : bool Term.t
+val debug : bool Term.t
 val after_pass : Compiler.compiler_step Term.t
 
 val parse_and_compile :

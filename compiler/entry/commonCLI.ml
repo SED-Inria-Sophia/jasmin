@@ -35,6 +35,10 @@ let warn =
   let doc = "Print warnings" in
   Arg.(value & flag & info [ "warn" ] ~doc)
 
+let debug =
+  let doc = "Print debug information" in
+  Arg.(value & flag & info [ "debug" ] ~doc)
+
 let after_pass =
   let alts =
     List.map
